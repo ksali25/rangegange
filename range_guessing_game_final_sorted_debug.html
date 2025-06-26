@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Range Guessing Game</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .question-container { display: none; }
+    .question-container.active { display: block; }
+    .chart { position: relative; height: 60px; background: #f0f0f0; margin: 20px 0; border: 1px solid #ccc; }
+    .tick { position: absolute; top: 0; height: 100%; width: 1px; background: #999; }
+    .tick-label { position: absolute; top: 100%; transform: translateX(-50%); font-size: 12px; }
+    .emoji { position: absolute; cursor: grab; font-size: 24px; }
+    .answer-line, .answer-band { position: absolute; top: 0; height: 100%; display: none; }
+    .answer-line { width: 2px; background: red; }
+    .answer-band { background: rgba(255, 0, 0, 0.3); }
+    .scoreboard { margin-top: 20px; }
+    #final-results { display: none; }
+    .emoji-bank { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+    .emoji-wrapper { display: flex; align-items: center; gap: 5px; position: relative; }
+    .emoji-wrapper input { width: 60px; }
+  </style>
+</head>
+<body>
+
+<h1>Range Guessing Game</h1>
+<div id="game-area"></div>
+
+<div class="emoji-bank" id="emoji-bank"></div>
+
+<div class="scoreboard">
+  <h3>Scores</h3>
+  <ul id="score-list"></ul>
+</div>
+
+<div>
+  <button onclick="prevQuestion()">Previous</button>
+  <button onclick="nextQuestion()">Next</button>
+  <button onclick="revealAnswer()">Reveal Answer</button> <button onclick="resetGame()" style="margin-left: 40px;">Clear Game</button>
+</div>
+
+<div id="final-results">
+  <button onclick="resetGame()">Play Again</button>
+  <h2>Final Results</h2>
+  <ul id="final-score-list"></ul>
+</div>
+
+<script>
+const questions = [
+  { text: "1. Population of Canada (in millions)", min: 0, max: 100, answer: 41.5 },
+  { text: "2. Height of Burj Khalifa (in meters)", min: 0, max: 1000, answer: 828 },
+  { text: "3. Average Lifespan of a Blue Whale (in years)", min: 0, max: 150, answer: 85 },
+  { text: "4. Distance from NY to LA (in km)", min: 0, max: 5000, answer: 3940 },
+  { text: "5. Weight of an Elephant (in kg)", min: 0, max: 10000, answer: 6000 },
+  { text: "6. Age of the Earth (in billion years)", min: 0, max: 10, answer: 4.54 },
+  { text: "7. Speed of Light (in km/s)", min: 0, max: 400000, answer: 299792 },
+  { text: "8. Depth of Mariana Trench (in meters)", min: 0, max: 12000, answer: 10994 },
+  { text: "9. Height of Mount Everest (in meters)", min: 0, max: 10000, answer: 8849 },
+  { text: "10. Average Human Body Temperature (°C)", min: 30, max: 45, answer: 37 }
+];
+
+const emojis = ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐯", "🦁", "🐸", "🐵", "🐷", "🐮", "🐔"];
+let scores = {};
+let currentQuestion = 0;
+let emojiElements = [];
+
+function createGame() {
+  const gameArea = document.getElementById("game-area");
+  questions.forEach((q, index) => {
+    const container = document.createElement("div");
+    container.className = "question-container";
+    if (index === 0) container.classList.add("active");
+
+    const title = document.createElement("h2");
+    title.textContent = q.text;
+    container.appendChild(title);
+
+    const chart = document.createElement("div");
+    chart.className = "chart";
+    chart.dataset.min = q.min;
+    chart.dataset.max = q.max;
+    chart.dataset.index = index;
+
+    for (let i = 0; i <= 10; i++) {
+      const tick = document.createElement("div");
+      tick.className = "tick";
+      tick.style.left = `${i * 10}%`;
+      chart.appendChild(tick);
+
+      const label = document.createElement("div");
+      label.className = "tick-label";
+      label.style.left = `${i * 10}%`;
+      label.textContent = (q.min + (q.max - q.min) * i / 10).toFixed(0);
+      chart.appendChild(label);
+    }
+
+    if (q.answer !== undefined) {
+      const line = document.createElement("div");
+      line.className = "answer-line";
+      line.style.left = `${((q.answer - q.min) / (q.max - q.min)) * 100}%`;
+      line.title = q.answer;
+      chart.appendChild(line);
+    } else if (q.answerRange) {
+      const band = document.createElement("div");
+      band.className = "answer-band";
+      band.style.left = `${((q.answerRange[0] - q.min) / (q.max - q.min)) * 100}%`;
+      band.style.width = `${((q.answerRange[1] - q.answerRange[0]) / (q.max - q.min)) * 100}%`;
+      band.title = `${q.answerRange[0]}–${q.answerRange[1]}`;
+      chart.appendChild(band);
+    }
+
+    container.appendChild(chart);
+    gameArea.appendChild(container);
+  });
+
+  const emojiBank = document.getElementById("emoji-bank");
+  emojis.forEach((emoji, i) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "emoji-wrapper";
+
+    const emojiEl = document.createElement("div");
+    emojiEl.className = "emoji";
+    emojiEl.textContent = emoji;
+    emojiEl.draggable = true;
+    emojiEl.dataset.emoji = emoji;
+    emojiEl.dataset.score = 0;
+    emojiEl.dataset.wrapperId = `emoji-wrapper-${i}`;
+    emojiEl.addEventListener("dragstart", dragStart);
+    emojiElements.push(emojiEl);
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "Name";
+    input.dataset.emoji = emoji;
+
+    wrapper.id = `emoji-wrapper-${i}`;
+    wrapper.appendChild(emojiEl);
+    wrapper.appendChild(input);
+    emojiBank.appendChild(wrapper);
+
+    scores[emoji] = 0;
+  });
+
+  document.querySelectorAll(".chart").forEach(chart => {
+    chart.addEventListener("dragover", e => e.preventDefault());
+    chart.addEventListener("drop", dropEmoji);
+  });
+
+  updateScoreboard();
+}
+
+function dragStart(e) {
+  e.dataTransfer.setData("text/plain", e.target.dataset.emoji);
+}
+
+function dropEmoji(e) {
+  const emoji = e.dataTransfer.getData("text/plain");
+  const el = emojiElements.find(el => el.dataset.emoji === emoji);
+  const chart = e.currentTarget;
+  const rect = chart.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  el.style.left = `${x - 12}px`;
+  el.style.top = `18px`;
+  chart.appendChild(el);
+}
+
+function resetEmojis() {
+  emojiElements.forEach(el => {
+    el.style.left = "0px";
+    el.style.top = "0px";
+    const wrapper = document.getElementById(el.dataset.wrapperId);
+    wrapper.insertBefore(el, wrapper.firstChild);
+  });
+}
+
+function nextQuestion() {
+  if (currentQuestion < questions.length - 1) {
+    document.querySelectorAll(".question-container")[currentQuestion].classList.remove("active");
+    currentQuestion++;
+    document.querySelectorAll(".question-container")[currentQuestion].classList.add("active");
+    resetEmojis();
+  }
+}
+
+function prevQuestion() {
+  if (currentQuestion > 0) {
+    document.querySelectorAll(".question-container")[currentQuestion].classList.remove("active");
+    currentQuestion--;
+    document.querySelectorAll(".question-container")[currentQuestion].classList.add("active");
+    resetEmojis();
+  }
+}
+
+function revealAnswer() {
+  const container = document.querySelectorAll(".question-container")[currentQuestion];
+  const chart = container.querySelector(".chart");
+  const min = parseFloat(chart.dataset.min);
+  const max = parseFloat(chart.dataset.max);
+  const answer = questions[currentQuestion].answer;
+  const answerRange = questions[currentQuestion].answerRange;
+
+  const placed = Array.from(chart.querySelectorAll(".emoji"));
+  const distances = placed.map(el => {
+    const rect = chart.getBoundingClientRect();
+    const x = el.getBoundingClientRect().left + 12 - rect.left;
+    const percent = x / rect.width;
+    const value = min + percent * (max - min);
+    el.dataset.value = value;
+    if (answerRange) {
+      return { el, distance: (value < answerRange[0] || value > answerRange[1]) ? Infinity : 0 };
+    } else {
+      return { el, distance: Math.abs(value - answer) };
+    }
+  });
+
+  distances.sort((a, b) => a.distance - b.distance);
+  if (answerRange) {
+    distances.forEach(d => {
+      if (d.distance === 0) scores[d.el.dataset.emoji] += 1;
+    });
+  } else {
+    if (distances[0]) scores[distances[0].el.dataset.emoji] += 3;
+    if (distances[1]) scores[distances[1].el.dataset.emoji] += 2;
+    if (distances[2]) scores[distances[2].el.dataset.emoji] += 1;
+    if (distances[distances.length - 1]) scores[distances[distances.length - 1].el.dataset.emoji] -= 1;
+  }
+
+  chart.querySelectorAll(".answer-line, .answer-band").forEach(el => {
+    el.style.display = "block";
+    const label = document.createElement("div");
+    label.style.position = "absolute";
+    label.style.top = "-20px";
+    label.style.left = el.style.left;
+    label.style.fontSize = "12px";
+    label.textContent = el.title;
+    chart.appendChild(label);
+  });
+
+  updateScoreboard();
+  if (currentQuestion === questions.length - 1) showFinalResults();
+}
+
+function updateScoreboard() {
+  const list = document.getElementById("score-list");
+  list.innerHTML = "";
+  emojis.forEach(emoji => {
+    const name = document.querySelector(`input[data-emoji="${emoji}"]`)?.value || "(no name)";
+    const li = document.createElement("li");
+    li.textContent = `${emoji} ${name}: ${scores[emoji]}`;
+    list.appendChild(li);
+  });
+}
+
+function showFinalResults() {
+  document.getElementById("final-results").style.display = "block";
+  const list = document.getElementById("final-score-list");
+  list.innerHTML = "";
+  emojis.forEach(emoji => {
+    const name = document.querySelector(`input[data-emoji="${emoji}"]`)?.value || "(no name)";
+    const li = document.createElement("li");
+    li.textContent = `${emoji} ${name}: ${scores[emoji]}`;
+    list.appendChild(li);
+  });
+}
+
+createGame();
+
+function resetGame() {
+  currentQuestion = 0;
+  document.querySelectorAll(".question-container").forEach((el, i) => {
+    el.classList.toggle("active", i === 0);
+  });
+  document.getElementById("final-results").style.display = "none";
+
+  // Reset scores
+  emojis.forEach(e => scores[e] = 0);
+
+  // Reset name inputs
+  document.querySelectorAll(".emoji-wrapper input").forEach(input => input.value = "");
+
+  // Reset scoreboard
+  updateScoreboard();
+
+  // Remove answers and reset emoji placements
+  document.querySelectorAll(".chart").forEach(chart => {
+    chart.querySelectorAll(".answer-line, .answer-band").forEach(el => el.style.display = "none");
+    chart.querySelectorAll("div").forEach(el => {
+      if (el.style && el.style.top === "-20px") el.remove(); // answer labels
+    });
+    chart.querySelectorAll(".emoji").forEach(el => {
+      const wrapper = document.getElementById(el.dataset.wrapperId);
+      el.style.left = "0px";
+      el.style.top = "0px";
+      wrapper.insertBefore(el, wrapper.firstChild);
+    });
+  });
+}
+
+
+
+</script>
+
+</body>
+</html>
