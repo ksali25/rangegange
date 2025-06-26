@@ -242,7 +242,7 @@ function revealAnswer() {
 
 function updateScoreboard() {
   const list = document.getElementById("score-list");
-  list.innerHTML = "";
+  list.inner = "";
   emojis.forEach(emoji => {
     const name = document.querySelector(`input[data-emoji="${emoji}"]`)?.value || "(no name)";
     const li = document.createElement("li");
@@ -254,7 +254,7 @@ function updateScoreboard() {
 function showFinalResults() {
   document.getElementById("final-results").style.display = "block";
   const list = document.getElementById("final-score-list");
-  list.innerHTML = "";
+  list.inner = "";
   emojis.forEach(emoji => {
     const name = document.querySelector(`input[data-emoji="${emoji}"]`)?.value || "(no name)";
     const li = document.createElement("li");
